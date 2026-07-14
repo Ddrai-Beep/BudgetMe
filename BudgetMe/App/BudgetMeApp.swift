@@ -29,6 +29,7 @@ struct RootContainerView: View {
             }
         }
         .animation(.easeInOut, value: store.profile.hasCompletedOnboarding)
+        .onAppear { NotificationManager.shared.requestAuthorization() }
         .onChange(of: storeManager.isSubscribed) { subscribed in
             // A real active subscription unlocks Paid. (The dev toggle can still set it manually.)
             if subscribed { store.profile.tier = .paid }

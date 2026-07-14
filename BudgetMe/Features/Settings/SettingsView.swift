@@ -88,16 +88,19 @@ struct SettingsView: View {
         Section("Budget framework") {
             ForEach(BudgetFramework.allCases) { fw in
                 Button {
-                    if fw.isFree { store.profile.framework = fw }
+                    if fw.isFree || store.profile.tier == .paid {
+                        store.profile.framework = fw
+                    } else {
+                        showPaywall = true
+                    }
                 } label: {
                     HStack {
                         Text(fw.rawValue).foregroundStyle(.primary)
                         Spacer()
                         if fw == store.profile.framework { Image(systemName: "checkmark").foregroundStyle(Theme.primary) }
-                        if !fw.isFree { PaidBadge() }
+                        if !fw.isFree && store.profile.tier != .paid { PaidBadge() }
                     }
                 }
-                .disabled(!fw.isFree)
             }
         }
     }

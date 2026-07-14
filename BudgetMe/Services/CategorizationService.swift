@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 struct CategorizationResult {
     let category: Category
@@ -10,6 +11,14 @@ struct CategorizationResult {
 /// an on-device CoreML model; the interface stays the same.
 final class CategorizationService {
     private let learnedKey = "learned_merchant_categories"
+
+    /// Optional on-device Create ML text classifier. Drop a compiled `MerchantCategorizer.mlmodelc`
+    /// into the app target (trained on labelled merchant→category data) to enable it. Until then the
+    /// seed table + learned corrections are used, so this ships with a graceful fallback.
+    private lazy var mlModel: NLModel? = {
+        guard let url = Bundle.main.url(forResource: "MerchantCategorizer", withExtension: "mlmodelc") else { return nil }
+        return try? NLModel(contentsOf: url)
+    }()
 
     /// Substring match table. Keys are lowercased merchant tokens.
     private let seed: [(token: String, category: Category)] = [
@@ -52,7 +61,11 @@ final class CategorizationService {
         for entry in seed where key.contains(entry.token) {
             return CategorizationResult(category: entry.category, confidence: 0.9)
         }
-        // 3) Low confidence → surface for user help.
+        // 3) On-device ML model, if one is bundled.
+        if let label = mlModel?.predictedLabel(for: merchant), !label.isEmpty {
+            return CategorizationResult(category: Category(label), confidence: 0.7)
+        }
+        // 4) Low confidence → surface for user help.
         return CategorizationResult(category: .uncategorized, confidence: 0.2)
     }
 

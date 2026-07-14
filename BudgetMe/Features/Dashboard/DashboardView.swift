@@ -23,6 +23,7 @@ struct DashboardView: View {
                     forecastWidget
                     subscriptionsWidget
                     recentTransactions
+                    planningWidgets
                 }
                 .padding()
             }
@@ -36,6 +37,75 @@ struct DashboardView: View {
                 }
             }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+        }
+    }
+
+    // MARK: Planning widgets (savings goals free, debt planner paid/blurred)
+
+    private var planningWidgets: some View {
+        VStack(spacing: 16) {
+            NavigationLink { SavingsGoalsView() } label: {
+                planningCard(
+                    title: "Savings goals",
+                    icon: "target",
+                    value: store.savingsGoals.isEmpty
+                        ? "Plan for what matters"
+                        : "\(store.savingsGoals.count) goal\(store.savingsGoals.count == 1 ? "" : "s") tracked",
+                    locked: false
+                )
+            }
+            .buttonStyle(.plain)
+
+            if store.profile.tier == .paid {
+                NavigationLink { DebtPlannerView() } label: {
+                    planningCard(
+                        title: "Debt payoff planner",
+                        icon: "creditcard.and.123",
+                        value: store.debts.isEmpty
+                            ? "Add your debts to start"
+                            : "\(store.debts.count) debt\(store.debts.count == 1 ? "" : "s") tracked",
+                        locked: false
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button { showPaywall = true } label: {
+                    planningCard(
+                        title: "Debt payoff planner",
+                        icon: "creditcard.and.123",
+                        value: "See your debt-free date",
+                        locked: true
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func planningCard(title: String, icon: String, value: String, locked: Bool) -> some View {
+        CardView {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.title3).foregroundStyle(Theme.primary)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.bold())
+                    Text(value).font(.caption).foregroundStyle(Theme.subtleText)
+                }
+                Spacer()
+                Image(systemName: locked ? "lock.fill" : "chevron.right")
+                    .font(.caption).foregroundStyle(Theme.subtleText)
+            }
+            .blur(radius: locked ? 3.5 : 0)
+            .overlay {
+                if locked {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill").font(.caption2)
+                        Text("Unlock with Paid").font(.caption.bold())
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
         }
     }
 
@@ -202,7 +272,8 @@ struct DashboardView: View {
         let recurring = ForecastService.detectRecurring(store.transactions, autoDetectIncome: autoDetectIncome)
         let start = store.profile.monthlyIncome - store.totalSpentThisMonth
         let points = ForecastService.project(transactions: store.transactions, confirmed: recurring,
-                                             horizon: 15, startingBalance: start)
+                                             horizon: 15, startingBalance: start,
+                                             planned: store.plannedEntries)
         let end = points.last?.balance ?? start
         return CardView {
             VStack(alignment: .leading, spacing: 6) {

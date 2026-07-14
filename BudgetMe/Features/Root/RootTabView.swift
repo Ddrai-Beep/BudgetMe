@@ -23,8 +23,15 @@ struct RootTabView: View {
                 .tag(4)
         }
         .onChange(of: scenePhase) { phase in
-            // Pick up transactions the Shortcut logged while we were backgrounded.
-            if phase == .active { store.reloadFromDisk() }
+            // Pick up transactions the Shortcut logged while we were backgrounded,
+            // and refresh subscription renewal reminders.
+            if phase == .active {
+                store.reloadFromDisk()
+                NotificationManager.shared.scheduleRenewalReminders(
+                    subscriptions: store.subscriptions + store.detectedSubscriptions(),
+                    currencyCode: store.profile.currencyCode
+                )
+            }
         }
     }
 }

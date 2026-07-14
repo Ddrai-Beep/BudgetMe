@@ -10,6 +10,8 @@ struct ForecastView: View {
     @AppStorage("autoDetectRecurringIncome") private var autoDetectIncome = true
     @AppStorage("forecastOpenCount") private var forecastOpenCount = 0
     @State private var showIncomeNotice = false
+    @State private var showAddPlanned = false
+    @State private var showPaywall = false
 
     private var code: String { store.profile.currencyCode }
 
@@ -24,7 +26,8 @@ struct ForecastView: View {
 
     private var points: [ForecastPoint] {
         ForecastService.project(transactions: store.transactions, confirmed: recurring,
-                                horizon: horizon, startingBalance: startingBalance)
+                                horizon: horizon, startingBalance: startingBalance,
+                                planned: store.plannedEntries)
     }
 
     var body: some View {
@@ -39,6 +42,7 @@ struct ForecastView: View {
                         negativeBanner(neg)
                     }
                     chartCard
+                    plannedCard
                     recurringCard
                 }
                 .padding()
@@ -49,6 +53,54 @@ struct ForecastView: View {
                 if forecastOpenCount < 2 {
                     showIncomeNotice = true
                     forecastOpenCount += 1
+                }
+            }
+            .sheet(isPresented: $showAddPlanned) { AddPlannedEntryView() }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
+        }
+    }
+
+    private var plannedCard: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Planned one-time entries").font(.subheadline.bold())
+                    Spacer()
+                    if store.profile.tier == .paid {
+                        Button { showAddPlanned = true } label: { Image(systemName: "plus") }
+                    } else {
+                        PaidBadge()
+                    }
+                }
+                if store.profile.tier != .paid {
+                    Text("Add expected one-off income or expenses to model scenarios. Paid feature.")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                    Button("Upgrade") { showPaywall = true }.font(.caption.bold())
+                } else if store.plannedEntries.isEmpty {
+                    Text("Add expected one-off income or expenses (e.g. a freelance payment) to see their effect.")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                } else {
+                    ForEach(store.plannedEntries.sorted { $0.date < $1.date }) { entry in
+                        HStack {
+                            Image(systemName: entry.isIncome ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .foregroundStyle(entry.isIncome ? Theme.primary : Theme.warning)
+                            VStack(alignment: .leading) {
+                                Text(entry.name).font(.subheadline)
+                                Text(entry.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption2).foregroundStyle(Theme.subtleText)
+                            }
+                            Spacer()
+                            Text(Money.format(entry.amount, code: code, showSign: entry.isIncome))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(entry.isIncome ? Theme.primary : .primary)
+                            Button {
+                                store.deletePlannedEntry(entry)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.subtleText)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }

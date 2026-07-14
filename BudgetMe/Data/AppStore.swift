@@ -23,6 +23,22 @@ final class AppStore: ObservableObject {
         didSet { persist() }
     }
 
+    @Published private(set) var customCategories: [String] = [] {
+        didSet { persist() }
+    }
+
+    @Published private(set) var debts: [Debt] = [] {
+        didSet { persist() }
+    }
+
+    @Published private(set) var savingsGoals: [SavingsGoal] = [] {
+        didSet { persist() }
+    }
+
+    @Published private(set) var plannedEntries: [PlannedEntry] = [] {
+        didSet { persist() }
+    }
+
     private let persistence = PersistenceController.shared
     private let categorizer = CategorizationService()
 
@@ -34,10 +50,16 @@ final class AppStore: ObservableObject {
         self.profile = data.profile
         self.transactions = data.transactions.sorted { $0.date > $1.date }
         self.subscriptions = data.subscriptions
+        self.customCategories = data.customCategories
+        self.debts = data.debts
+        self.savingsGoals = data.savingsGoals
+        self.plannedEntries = data.plannedEntries
     }
 
     private func persist() {
-        persistence.save(AppData(profile: profile, transactions: transactions, subscriptions: subscriptions))
+        persistence.save(AppData(profile: profile, transactions: transactions,
+                                 subscriptions: subscriptions, customCategories: customCategories,
+                                 debts: debts, savingsGoals: savingsGoals, plannedEntries: plannedEntries))
     }
 
     /// Reload from disk — call when returning to foreground so Shortcut-added rows appear.
@@ -142,8 +164,77 @@ final class AppStore: ObservableObject {
     func clearAllData() {
         transactions = []
         subscriptions = []
+        customCategories = []
+        debts = []
+        savingsGoals = []
+        plannedEntries = []
         profile = UserProfile()
     }
+
+    func addPlannedEntry(_ entry: PlannedEntry) { plannedEntries.append(entry) }
+    func deletePlannedEntry(_ entry: PlannedEntry) { plannedEntries.removeAll { $0.id == entry.id } }
+
+    // MARK: - Debts & savings goals
+
+    func addDebt(_ debt: Debt) { debts.append(debt) }
+    func deleteDebt(_ debt: Debt) { debts.removeAll { $0.id == debt.id } }
+
+    func addGoal(_ goal: SavingsGoal) { savingsGoals.append(goal) }
+    func deleteGoal(_ goal: SavingsGoal) { savingsGoals.removeAll { $0.id == goal.id } }
+    func logContribution(_ amount: Double, to goal: SavingsGoal) {
+        guard let i = savingsGoals.firstIndex(where: { $0.id == goal.id }) else { return }
+        savingsGoals[i].saved += amount
+    }
+
+    /// Rough average monthly spend over the last 90 days (for the emergency-fund prompt).
+    var averageMonthlySpend: Double {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+        let total = transactions.filter { !$0.isIncome && $0.date >= cutoff }.reduce(0) { $0 + $1.amount }
+        return total / 3.0
+    }
+
+    // MARK: - Categories
+
+    func addCustomCategory(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              !Category.builtInIDs.contains(trimmed),
+              !customCategories.contains(trimmed) else { return }
+        customCategories.append(trimmed)
+    }
+
+    /// Selectable categories, most-used first, with custom categories included.
+    func categoriesByUsage() -> [Category] {
+        var counts: [String: Int] = [:]
+        for tx in transactions { counts[tx.category.id, default: 0] += 1 }
+        let all = Category.allCases + customCategories.map { Category($0) }
+        return all.sorted { (counts[$0.id] ?? 0) > (counts[$1.id] ?? 0) }
+    }
+
+    // MARK: - Budget framework helpers
+
+    /// Non-income spend in a category for a month offset (0 = this month, -1 = last month).
+    func spent(categoryID: String, monthOffset: Int = 0) -> Double {
+        let cal = Calendar.current
+        guard let month = cal.date(byAdding: .month, value: monthOffset, to: Date()) else { return 0 }
+        return transactions
+            .filter { !$0.isIncome && $0.category.id == categoryID
+                      && cal.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    func isRolloverOn(_ id: String) -> Bool { !profile.rolloverDisabled.contains(id) }
+
+    func setRollover(_ on: Bool, for id: String) {
+        if on {
+            profile.rolloverDisabled.removeAll { $0 == id }
+        } else if !profile.rolloverDisabled.contains(id) {
+            profile.rolloverDisabled.append(id)
+        }
+    }
+
+    func limit(for id: String) -> Double { profile.categoryLimits[id] ?? 0 }
+    func setLimit(_ value: Double, for id: String) { profile.categoryLimits[id] = value }
 
     /// Simple CSV export of all transactions (PRD §7.2 data export).
     func exportCSV() -> String {
@@ -152,7 +243,7 @@ final class AppStore: ObservableObject {
         for tx in transactions {
             let type = tx.isIncome ? "income" : "expense"
             let merchant = tx.merchant.replacingOccurrences(of: ",", with: " ")
-            rows.append("\(df.string(from: tx.date)),\(merchant),\(tx.category.rawValue),\(tx.amount),\(type),\(tx.source.rawValue)")
+            rows.append("\(df.string(from: tx.date)),\(merchant),\(tx.category.id),\(tx.amount),\(type),\(tx.source.rawValue)")
         }
         return rows.joined(separator: "\n")
     }

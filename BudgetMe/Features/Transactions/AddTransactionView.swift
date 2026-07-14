@@ -22,12 +22,15 @@ struct AddTransactionView: View {
                 Section("Category") {
                     Toggle("Auto-categorize", isOn: $autoCategory)
                     if !autoCategory {
-                        Picker("Category", selection: $category) {
-                            ForEach(Category.allCases) { c in
-                                Label(c.displayName, systemImage: c.systemImage).tag(c)
+                        NavigationLink {
+                            CategoryPickerView(selected: $category)
+                        } label: {
+                            HStack {
+                                Text("Category")
+                                Spacer()
+                                Text(category.displayName).foregroundStyle(Theme.subtleText)
                             }
                         }
-                        .pickerStyle(.navigationLink)
                     }
                 }
                 Section("Note") {

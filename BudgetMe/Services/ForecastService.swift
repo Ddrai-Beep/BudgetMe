@@ -110,7 +110,7 @@ enum ForecastService {
 
     /// Projects daily cumulative net change for `horizon` days starting today.
     static func project(transactions: [Transaction], confirmed: [RecurringItem], horizon: Int,
-                        startingBalance: Double = 0) -> [ForecastPoint] {
+                        startingBalance: Double = 0, planned: [PlannedEntry] = []) -> [ForecastPoint] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         let discretionaryPerDay = discretionaryDailySpend(transactions, recurring: confirmed)
@@ -125,6 +125,14 @@ enum ForecastService {
                     recurringByDay[offset, default: 0] += item.isIncome ? item.amount : -item.amount
                 }
                 next = cal.date(byAdding: .day, value: item.cadence.days, to: next) ?? next
+            }
+        }
+
+        // Manual one-time planned income/expenses.
+        for entry in planned {
+            let offset = cal.dateComponents([.day], from: today, to: cal.startOfDay(for: entry.date)).day ?? -1
+            if offset >= 0 && offset <= horizon {
+                recurringByDay[offset, default: 0] += entry.isIncome ? entry.amount : -entry.amount
             }
         }
 
