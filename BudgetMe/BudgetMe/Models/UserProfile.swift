@@ -33,6 +33,13 @@ struct UserProfile: Codable {
     var tier: Tier = .free
     var hasCompletedOnboarding: Bool = false
 
-    /// Free tier caps logged transactions at 50 (PRD §6).
-    static let freeTransactionCap = 50
+    /// Monthly allocation per category id (Zero-Based & Custom frameworks).
+    var categoryLimits: [String: Double] = [:]
+    /// Savings target for the Pay Yourself First framework.
+    var savingsTarget: Double = 0
+    /// Category ids with rollover switched off (rollover is on by default).
+    var rolloverDisabled: [String] = []
+
+    /// Free tier caps logged transactions at 60 per rolling week.
+    static let freeTransactionCap = 60
 }

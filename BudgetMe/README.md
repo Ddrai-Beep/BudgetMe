@@ -23,6 +23,7 @@ Persistence is a local JSON store behind a small interface, so it swaps cleanly 
 - Paid features: Zero-Based / Pay Yourself First / Custom frameworks, rollover budgets, subscription manager, debt planner, savings goals.
 - CoreData + CloudKit persistence; on-device CoreML categorization.
 - Arabic / RTL localization (v1.1).
+- **Unified recurring-confirmation flow.** Today income is auto-assumed monthly (toggle in Settings). Replace this with the same "we noticed this — is it recurring?" confirmation that expenses should use, so both income and expenses are user-confirmed rather than assumed.
 
 ---
 

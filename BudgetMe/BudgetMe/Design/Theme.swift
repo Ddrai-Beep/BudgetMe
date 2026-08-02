@@ -2,14 +2,14 @@ import SwiftUI
 
 /// Mint-inspired palette. Warm, clear, moderate density. Dark-mode aware via system colors.
 enum Theme {
-    static let primary = Color(hex: 0x17BF9E)   // mint/teal-green
-    static let primaryDark = Color(hex: 0x0E9E82)
+    static let primary = Color(hex: 0x085F48)   // emerald green
+    static let primaryDark = Color(hex: 0x064A38)
     static let accent = Color(hex: 0xFFB300)
 
     // 50/30/20 buckets
     static let needs = Color(hex: 0x42A5F5)
     static let wants = Color(hex: 0xAB47BC)
-    static let savings = Color(hex: 0x17BF9E)
+    static let savings = Color(hex: 0x085F48)
 
     static let danger = Color(hex: 0xE53935)
     static let warning = Color(hex: 0xFB8C00)

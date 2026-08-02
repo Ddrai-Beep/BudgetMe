@@ -2,6 +2,10 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject private var store: AppStore
+    @AppStorage("autoDetectRecurringIncome") private var autoDetectIncome = true
+    @AppStorage("devShowStatement") private var devShowStatement = false
+    @State private var showPaywall = false
+    @State private var showStatement = false
 
     private var code: String { store.profile.currencyCode }
     private var monthName: String {
@@ -14,15 +18,139 @@ struct DashboardView: View {
                 VStack(spacing: 16) {
                     if store.isAtFreeCap { freeCapBanner }
                     spendingSummary
+                    if StatementAnalyzer.isAIAvailable || devShowStatement { statementCard }
                     bucketCards
                     forecastWidget
+                    subscriptionsWidget
                     recentTransactions
+                    planningWidgets
                 }
                 .padding()
             }
             .background(Theme.background)
             .navigationTitle(greeting)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showPaywall) { PaywallView() }
+            .fullScreenCover(isPresented: $showStatement) { StatementFlowView() }
+        }
+    }
+
+    private var statementCard: some View {
+        Button { showStatement = true } label: {
+            CardView {
+                HStack(spacing: 12) {
+                    Image(systemName: "sparkles").font(.title3).foregroundStyle(Theme.primary)
+                        .frame(width: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Analyze a statement with AI").font(.subheadline.bold())
+                        Text("Import charges Apple Pay misses — rent, bills, loans.")
+                            .font(.caption).foregroundStyle(Theme.subtleText)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.subtleText)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Planning widgets (savings goals free, debt planner paid/blurred)
+
+    private var planningWidgets: some View {
+        VStack(spacing: 16) {
+            NavigationLink { SavingsGoalsView() } label: {
+                planningCard(
+                    title: "Savings goals",
+                    icon: "target",
+                    value: store.savingsGoals.isEmpty
+                        ? "Plan for what matters"
+                        : "\(store.savingsGoals.count) goal\(store.savingsGoals.count == 1 ? "" : "s") tracked",
+                    locked: false
+                )
+            }
+            .buttonStyle(.plain)
+
+            if store.profile.tier == .paid {
+                NavigationLink { DebtPlannerView() } label: {
+                    planningCard(
+                        title: "Debt payoff planner",
+                        icon: "creditcard.and.123",
+                        value: store.debts.isEmpty
+                            ? "Add your debts to start"
+                            : "\(store.debts.count) debt\(store.debts.count == 1 ? "" : "s") tracked",
+                        locked: false
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button { showPaywall = true } label: {
+                    planningCard(
+                        title: "Debt payoff planner",
+                        icon: "creditcard.and.123",
+                        value: "See your debt-free date",
+                        locked: true
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func planningCard(title: String, icon: String, value: String, locked: Bool) -> some View {
+        CardView {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.title3).foregroundStyle(Theme.primary)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.bold())
+                    Text(value).font(.caption).foregroundStyle(Theme.subtleText)
+                }
+                Spacer()
+                Image(systemName: locked ? "lock.fill" : "chevron.right")
+                    .font(.caption).foregroundStyle(Theme.subtleText)
+            }
+            .blur(radius: locked ? 3.5 : 0)
+            .overlay {
+                if locked {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill").font(.caption2)
+                        Text("Unlock with Paid").font(.caption.bold())
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
+        }
+    }
+
+    private var subscriptionsWidget: some View {
+        Group {
+            if store.profile.tier == .paid {
+                NavigationLink { SubscriptionsView() } label: { subscriptionCard(locked: false) }
+                    .buttonStyle(.plain)
+            } else {
+                Button { showPaywall = true } label: { subscriptionCard(locked: true) }
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func subscriptionCard(locked: Bool) -> some View {
+        CardView {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("Subscriptions this month").font(.subheadline.bold())
+                        if locked { PaidBadge() }
+                    }
+                    Text(Money.format(store.monthlySubscriptionSpend, code: code))
+                        .font(.title3.bold())
+                    Text("\(store.activeSubscriptionCount) active")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.subtleText)
+            }
         }
     }
 
@@ -36,40 +164,54 @@ struct DashboardView: View {
 
     private var spendingSummary: some View {
         CardView {
-            VStack(spacing: 12) {
+            VStack(spacing: 14) {
+                let breakdown = store.spendByCategory()
+                let total = store.totalSpentThisMonth
+                let left = store.profile.monthlyIncome - total
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Spent in \(monthName)").font(.subheadline).foregroundStyle(Theme.subtleText)
-                        Text(Money.format(store.totalSpentThisMonth, code: code))
+                        Text("Left in \(monthName)").font(.subheadline).foregroundStyle(Theme.subtleText)
+                        Text(Money.format(left, code: code))
                             .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(left < 0 ? Theme.danger : .primary)
                     }
                     Spacer()
+                    Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Theme.subtleText)
                 }
-                let slices = store.spendByCategory().prefix(6).map {
-                    RingSlice(value: $0.amount, color: $0.category.color, label: $0.category.displayName)
+                .contentShape(Rectangle())
+                .onTapGesture { store.selectedTab = 1 }
+                let slices = breakdown.prefix(6).map { item -> RingSlice in
+                    let p = total > 0 ? Int((item.amount / total * 100).rounded()) : 0
+                    return RingSlice(
+                        value: item.amount,
+                        color: item.category.color,
+                        label: item.category.displayName,
+                        amountText: Money.format(item.amount, code: code),
+                        subtitleText: "\(p)% of \(monthName)"
+                    )
                 }
                 if slices.isEmpty {
                     Text("No spending yet this month.").foregroundStyle(Theme.subtleText).padding(.vertical, 24)
                 } else {
-                    HStack(alignment: .center, spacing: 16) {
+                    HStack(alignment: .center, spacing: 18) {
                         DonutChart(
                             slices: Array(slices),
-                            centerTitle: Money.format(store.totalSpentThisMonth, code: code),
-                            centerSubtitle: monthName
+                            lineWidth: 24,
+                            centerLabel: "Spent in \(monthName)",
+                            centerTitle: Money.format(total, code: code),
+                            centerSubtitle: ""
                         )
-                        .frame(width: 150, height: 150)
+                        .frame(width: 180, height: 180)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(store.spendByCategory().prefix(5), id: \.category) { item in
-                                HStack(spacing: 8) {
-                                    Circle().fill(item.category.color).frame(width: 9, height: 9)
-                                    Text(item.category.displayName).font(.caption).lineLimit(1)
-                                    Spacer()
-                                    Text(Money.format(item.amount, code: code))
-                                        .font(.caption.bold())
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(breakdown.prefix(6), id: \.category) { item in
+                                HStack(spacing: 10) {
+                                    Circle().fill(item.category.color).frame(width: 10, height: 10)
+                                    Text(item.category.displayName).font(.subheadline).lineLimit(1)
                                 }
                             }
                         }
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -85,19 +227,30 @@ struct DashboardView: View {
         )
         return VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Budget · 50/30/20")
-            ForEach(statuses) { s in
-                CardView(padding: 14) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(s.bucket.rawValue).font(.subheadline.bold())
-                            Spacer()
-                            Text("\(Money.format(s.spent, code: code)) / \(Money.format(s.limit, code: code))")
-                                .font(.caption).foregroundStyle(Theme.subtleText)
+            CardView {
+                VStack(spacing: 14) {
+                    ForEach(Array(statuses.enumerated()), id: \.element.id) { idx, s in
+                        VStack(spacing: 6) {
+                            HStack(spacing: 8) {
+                                Circle().fill(s.bucket.color).frame(width: 9, height: 9)
+                                Text(s.bucket.rawValue).font(.subheadline.weight(.medium))
+                                Spacer()
+                                Text("\(Money.format(s.spent, code: code)) / \(Money.format(s.limit, code: code))")
+                                    .font(.caption).foregroundStyle(Theme.subtleText)
+                            }
+                            BudgetBar(spent: s.spent, limit: s.limit, tint: s.bucket.color)
+                            if s.isOver {
+                                HStack {
+                                    Spacer()
+                                    Text("Over by \(Money.format(-s.remaining, code: code))")
+                                        .font(.caption2).foregroundStyle(Theme.danger)
+                                }
+                            }
                         }
-                        BudgetBar(spent: s.spent, limit: s.limit, tint: s.bucket.color)
-                        if s.isOver {
-                            Text("Over by \(Money.format(-s.remaining, code: code))")
-                                .font(.caption2).foregroundStyle(Theme.danger)
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.selectedTab = 2 }
+                        if idx < statuses.count - 1 {
+                            Divider().padding(.vertical, 2)
                         }
                     }
                 }
@@ -108,9 +261,12 @@ struct DashboardView: View {
     // MARK: Forecast widget (15-day free)
 
     private var forecastWidget: some View {
-        let recurring = ForecastService.detectRecurring(store.transactions)
-        let points = ForecastService.project(transactions: store.transactions, confirmed: recurring, horizon: 15)
-        let end = points.last?.balance ?? 0
+        let recurring = ForecastService.detectRecurring(store.transactions, autoDetectIncome: autoDetectIncome)
+        let start = store.profile.monthlyIncome - store.totalSpentThisMonth
+        let points = ForecastService.project(transactions: store.transactions, confirmed: recurring,
+                                             horizon: 15, startingBalance: start,
+                                             planned: store.plannedEntries)
+        let end = points.last?.balance ?? start
         return CardView {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -118,13 +274,15 @@ struct DashboardView: View {
                     Spacer()
                     Text("Forecast tab").font(.caption2).foregroundStyle(Theme.subtleText)
                 }
-                Text(Money.format(end, code: code, showSign: true))
+                Text(Money.format(end, code: code))
                     .font(.title3.bold())
                     .foregroundStyle(end < 0 ? Theme.danger : Theme.primary)
-                Text("Projected net change over the next 15 days")
+                Text("Projected balance in 15 days")
                     .font(.caption).foregroundStyle(Theme.subtleText)
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { store.selectedTab = 3 }
     }
 
     // MARK: Recent transactions
@@ -137,6 +295,8 @@ struct DashboardView: View {
                     ForEach(Array(store.transactions.prefix(5))) { tx in
                         TransactionRow(tx: tx, code: code)
                             .padding(.horizontal, 14).padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                            .onTapGesture { store.selectedTab = 1 }
                         if tx.id != store.transactions.prefix(5).last?.id {
                             Divider().padding(.leading, 62)
                         }
@@ -151,8 +311,8 @@ struct DashboardView: View {
             HStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
                 VStack(alignment: .leading) {
-                    Text("Free limit reached").font(.subheadline.bold())
-                    Text("You've logged \(UserProfile.freeTransactionCap) transactions. Upgrade for unlimited history.")
+                    Text("Weekly limit reached").font(.subheadline.bold())
+                    Text("You've hit your weekly limit of \(UserProfile.freeTransactionCap) transactions. Upgrade for unlimited logging.")
                         .font(.caption).foregroundStyle(Theme.subtleText)
                 }
             }

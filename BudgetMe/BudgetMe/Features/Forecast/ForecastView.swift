@@ -7,32 +7,119 @@ struct ForecastView: View {
     @State private var horizon = 15                 // free tier
     @State private var dismissed: Set<String> = []  // merchants excluded from forecast
 
+    @AppStorage("autoDetectRecurringIncome") private var autoDetectIncome = true
+    @AppStorage("forecastOpenCount") private var forecastOpenCount = 0
+    @State private var showIncomeNotice = false
+    @State private var showAddPlanned = false
+    @State private var showPaywall = false
+
     private var code: String { store.profile.currencyCode }
 
     private var recurring: [RecurringItem] {
-        ForecastService.detectRecurring(store.transactions)
+        ForecastService.detectRecurring(store.transactions, autoDetectIncome: autoDetectIncome)
             .filter { !dismissed.contains($0.merchant.lowercased()) }
     }
 
+    private var startingBalance: Double {
+        store.profile.monthlyIncome - store.totalSpentThisMonth
+    }
+
     private var points: [ForecastPoint] {
-        ForecastService.project(transactions: store.transactions, confirmed: recurring, horizon: horizon)
+        ForecastService.project(transactions: store.transactions, confirmed: recurring,
+                                horizon: horizon, startingBalance: startingBalance,
+                                planned: store.plannedEntries)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if showIncomeNotice && autoDetectIncome {
+                        incomeNoticeBanner
+                    }
                     horizonPicker
                     if let neg = ForecastService.firstNegativeDate(in: points) {
                         negativeBanner(neg)
                     }
                     chartCard
+                    plannedCard
                     recurringCard
                 }
                 .padding()
             }
             .background(Theme.background)
             .navigationTitle("Forecast")
+            .onAppear {
+                if forecastOpenCount < 2 {
+                    showIncomeNotice = true
+                    forecastOpenCount += 1
+                }
+            }
+            .sheet(isPresented: $showAddPlanned) { AddPlannedEntryView() }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
+        }
+    }
+
+    private var plannedCard: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Planned one-time entries").font(.subheadline.bold())
+                    Spacer()
+                    if store.profile.tier == .paid {
+                        Button { showAddPlanned = true } label: { Image(systemName: "plus") }
+                    } else {
+                        PaidBadge()
+                    }
+                }
+                if store.profile.tier != .paid {
+                    Text("Add expected one-off income or expenses to model scenarios. Paid feature.")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                    Button("Upgrade") { showPaywall = true }.font(.caption.bold())
+                } else if store.plannedEntries.isEmpty {
+                    Text("Add expected one-off income or expenses (e.g. a freelance payment) to see their effect.")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                } else {
+                    ForEach(store.plannedEntries.sorted { $0.date < $1.date }) { entry in
+                        HStack {
+                            Image(systemName: entry.isIncome ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                                .foregroundStyle(entry.isIncome ? Theme.primary : Theme.warning)
+                            VStack(alignment: .leading) {
+                                Text(entry.name).font(.subheadline)
+                                Text(entry.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption2).foregroundStyle(Theme.subtleText)
+                            }
+                            Spacer()
+                            Text(Money.format(entry.amount, code: code, showSign: entry.isIncome))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(entry.isIncome ? Theme.primary : .primary)
+                            Button {
+                                store.deletePlannedEntry(entry)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.subtleText)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var incomeNoticeBanner: some View {
+        CardView {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "info.circle.fill").foregroundStyle(Theme.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Income counted as recurring").font(.subheadline.bold())
+                    Text("BudgetMe treats your income as a monthly deposit to forecast your balance. You can turn this off in Settings.")
+                        .font(.caption).foregroundStyle(Theme.subtleText)
+                }
+                Spacer(minLength: 4)
+                Button { showIncomeNotice = false } label: {
+                    Image(systemName: "xmark").font(.caption).foregroundStyle(Theme.subtleText)
+                }
+            }
         }
     }
 
@@ -63,7 +150,7 @@ struct ForecastView: View {
     private var chartCard: some View {
         CardView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Projected net change").font(.subheadline.bold())
+                Text("Projected balance").font(.subheadline.bold())
                 Chart(points) { p in
                     LineMark(x: .value("Date", p.date), y: .value("Balance", p.balance))
                         .interpolationMethod(.catmullRom)
@@ -82,7 +169,7 @@ struct ForecastView: View {
                     }
                 }
                 .frame(height: 200)
-                Text("End of window: \(Money.format(points.last?.balance ?? 0, code: code, showSign: true))")
+                Text("End of window: \(Money.format(points.last?.balance ?? 0, code: code))")
                     .font(.caption).foregroundStyle(Theme.subtleText)
             }
         }
@@ -126,7 +213,7 @@ struct ForecastView: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
                 VStack(alignment: .leading) {
                     Text("Heads up").font(.subheadline.bold())
-                    Text("At this rate your net position dips below zero around \(date.formatted(date: .abbreviated, time: .omitted)).")
+                    Text("At this rate your balance dips below zero around \(date.formatted(date: .abbreviated, time: .omitted)).")
                         .font(.caption).foregroundStyle(Theme.subtleText)
                 }
             }

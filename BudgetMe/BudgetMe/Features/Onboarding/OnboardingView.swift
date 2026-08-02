@@ -19,6 +19,7 @@ struct OnboardingView: View {
             .indexViewStyle(.page(backgroundDisplayMode: .always))
 
             Button(step < 2 ? "Continue" : "Start budgeting") {
+                hideKeyboard()
                 if step < 2 { withAnimation { step += 1 } } else { finish() }
             }
             .font(.headline)
@@ -31,6 +32,8 @@ struct OnboardingView: View {
             .disabled(step == 1 && income.isEmpty)
         }
         .background(Theme.background.ignoresSafeArea())
+        .contentShape(Rectangle())
+        .onTapGesture { hideKeyboard() }
     }
 
     private var welcome: some View {
@@ -73,30 +76,19 @@ struct OnboardingView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var applePay: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: "wave.3.right.circle.fill")
-                    .font(.system(size: 56)).foregroundStyle(Theme.primary)
-                Text("Auto-track Apple Pay").font(.title2.bold())
-                Text("BudgetMe logs your Apple Pay taps automatically using a one-time iOS Shortcut. We'll walk you through it in Settings.")
-                    .foregroundStyle(Theme.subtleText)
-                CardView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Only Apple Pay (tap-to-pay) transactions are captured.", systemImage: "info.circle")
-                        Label("Cash, transfers and non-Wallet cards need manual entry.", systemImage: "hand.tap")
-                        Label("Your transaction data stays on your device.", systemImage: "lock.shield")
-                    }
-                    .font(.subheadline)
-                }
-                Text("You can start right now with the sample data and add your own transactions manually.")
-                    .font(.footnote).foregroundStyle(Theme.subtleText)
-            }
-            .padding()
+            AutoTrackSetupContent()
+                .padding()
         }
         .background(Theme.background)
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private func finish() {

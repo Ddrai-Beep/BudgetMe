@@ -5,6 +5,8 @@ enum TransactionSource: String, Codable {
     case applePay = "Apple Pay"   // ingested via the Shortcuts automation
     case manual = "Manual"
     case sample = "Sample"
+    case imported = "Imported"    // from a CSV / statement import
+    case receipt = "Receipt"      // scanned from a receipt photo
 }
 
 /// A single spending or income event. `amount` is positive for spend, negative is not used —

@@ -36,6 +36,8 @@ struct TransactionsView: View {
     @EnvironmentObject private var store: AppStore
     @State private var search = ""
     @State private var showingAdd = false
+    @State private var showingScan = false
+    @State private var path: [Transaction] = []
 
     private var code: String { store.profile.currencyCode }
 
@@ -54,7 +56,7 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 ForEach(grouped, id: \.day) { group in
                     Section(header: Text(sectionTitle(group.day))) {
@@ -76,11 +78,26 @@ struct TransactionsView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    Menu {
+                        Button { showingScan = true } label: { Label("Scan a receipt", systemImage: "doc.viewfinder") }
+                        Button { showingAdd = true } label: { Label("Add manually", systemImage: "square.and.pencil") }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
             .sheet(isPresented: $showingAdd) {
                 AddTransactionView()
+            }
+            .sheet(isPresented: $showingScan) {
+                ReceiptScannerView()
+            }
+            .onChange(of: store.selectedTab) { tab in
+                // Reset to the full list whenever the user leaves the Transactions tab.
+                if tab != 1 {
+                    path = []
+                    search = ""
+                }
             }
         }
     }
@@ -103,11 +120,14 @@ struct TransactionDetailView: View {
 
     private var code: String { store.profile.currencyCode }
 
+    /// Live copy so category edits reflect immediately.
+    private var live: Transaction { store.transactions.first { $0.id == tx.id } ?? tx }
+
     var body: some View {
         Form {
             Section {
                 HStack {
-                    CategoryIcon(category: tx.category, size: 48)
+                    CategoryIcon(category: live.category, size: 48)
                     VStack(alignment: .leading) {
                         Text(tx.merchant).font(.headline)
                         Text(tx.date.formatted(date: .abbreviated, time: .shortened))
@@ -119,15 +139,18 @@ struct TransactionDetailView: View {
                 }
             }
             Section("Category") {
-                Picker("Category", selection: Binding(
-                    get: { tx.category },
-                    set: { store.recategorize(tx, to: $0) }
-                )) {
-                    ForEach(Category.allCases) { c in
-                        Label(c.displayName, systemImage: c.systemImage).tag(c)
+                NavigationLink {
+                    CategoryPickerView(selected: Binding(
+                        get: { live.category },
+                        set: { store.recategorize(tx, to: $0) }
+                    ))
+                } label: {
+                    HStack {
+                        Text("Category")
+                        Spacer()
+                        Text(live.category.displayName).foregroundStyle(Theme.subtleText)
                     }
                 }
-                .pickerStyle(.navigationLink)
             }
             if let note = tx.note, !note.isEmpty {
                 Section("Note") { Text(note) }

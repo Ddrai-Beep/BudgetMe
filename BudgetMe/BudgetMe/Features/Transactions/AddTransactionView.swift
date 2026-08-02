@@ -22,12 +22,15 @@ struct AddTransactionView: View {
                 Section("Category") {
                     Toggle("Auto-categorize", isOn: $autoCategory)
                     if !autoCategory {
-                        Picker("Category", selection: $category) {
-                            ForEach(Category.allCases) { c in
-                                Label(c.displayName, systemImage: c.systemImage).tag(c)
+                        NavigationLink {
+                            CategoryPickerView(selected: $category)
+                        } label: {
+                            HStack {
+                                Text("Category")
+                                Spacer()
+                                Text(category.displayName).foregroundStyle(Theme.subtleText)
                             }
                         }
-                        .pickerStyle(.navigationLink)
                     }
                 }
                 Section("Note") {
@@ -35,7 +38,7 @@ struct AddTransactionView: View {
                 }
                 if store.isAtFreeCap {
                     Section {
-                        Label("You've hit the free \(UserProfile.freeTransactionCap)-transaction limit. Upgrade to keep logging.",
+                        Label("You've hit your weekly limit of \(UserProfile.freeTransactionCap) transactions. Upgrade to keep logging.",
                               systemImage: "lock.fill")
                             .font(.footnote).foregroundStyle(Theme.warning)
                     }
@@ -43,6 +46,7 @@ struct AddTransactionView: View {
             }
             .navigationTitle("Add Transaction")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -50,8 +54,16 @@ struct AddTransactionView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }.disabled(!canSave)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { hideKeyboard() }
+                }
             }
         }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private var canSave: Bool {
